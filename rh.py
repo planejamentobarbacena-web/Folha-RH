@@ -2,248 +2,312 @@ import streamlit as st
 import pandas as pd
 import io
 
-st.set_page_config(
-    page_title="Análise de Folha RH",
-    layout="wide"
-)
-
-st.title("📊 Análise de Folha RH")
-
-# =====================================================
-# BOTÃO NOVA CONSULTA
-# =====================================================
-
-if st.button("🔄 Nova Consulta"):
-    st.session_state.clear()
-    st.rerun()
-
-# =====================================================
-# UPLOAD ARQUIVOS
-# =====================================================
-
-st.subheader("Arquivos da Folha")
-
-arquivos = st.file_uploader(
-    "Selecione os arquivos da folha",
-    type=["xlsx","xls","csv"],
-    accept_multiple_files=True
-)
-
-st.subheader("Tabela Referência (Opcional)")
-
-arquivo_referencia = st.file_uploader(
-    "Tabela de referência",
-    type=["xlsx","xls","csv"]
-)
-
-# =====================================================
-# FUNÇÃO PARA LER ARQUIVOS
-# =====================================================
-
-def ler_arquivo(file):
-
-    if file.name.endswith(".csv"):
-        df = pd.read_csv(file, sep=";", encoding="latin1")
-    else:
-        df = pd.read_excel(file)
-
-    return df
+# controle reset uploads
+if "reset" not in st.session_state:
+    st.session_state.reset = 0
 
 
-# =====================================================
-# PROCESSAMENTO
-# =====================================================
+def render():
 
-if arquivos:
+    # ============================================
+    # BOTÃO NOVA CONSULTA (TOPO)
+    # ============================================
 
-    dfs = []
+    if st.button("🔄 Nova Consulta"):
+        st.session_state.reset += 1
+        st.rerun()
 
-    for arquivo in arquivos:
+    st.title("Análise de Folha - RH")
+    st.write("Envie um ou mais arquivos da folha para análise.")
 
-        df = ler_arquivo(arquivo)
+    # ============================================
+    # UPLOAD TABELA REFERENCIA (OPCIONAL)
+    # ============================================
 
-        df["ESTRUTURA ARQUIVO"] = arquivo.name
+    st.subheader("Tabela Referência (Opcional)")
 
-        dfs.append(df)
-
-    df = pd.concat(dfs, ignore_index=True)
-
-    # garante tipo numérico
-    df["VALOR"] = (
-        df["VALOR"]
-        .astype(str)
-        .str.replace(".","",regex=False)
-        .str.replace(",",".",regex=False)
+    tabela_ref_file = st.file_uploader(
+        "Envie a TABELA REFERENCIA",
+        type=["csv", "xlsx"],
+        key=f"tabela_ref_{st.session_state.reset}"
     )
 
-    df["VALOR"] = pd.to_numeric(df["VALOR"], errors="coerce").fillna(0)
+    tabela_referencia = None
 
-    # =====================================================
-    # VENCIMENTOS
-    # =====================================================
+    if tabela_ref_file is not None:
 
-    vencimentos = df[df["Tipo Evento"]=="VENCIMENTO"]
+        if tabela_ref_file.name.endswith(".csv"):
+            tabela_referencia = pd.read_csv(
+                tabela_ref_file,
+                sep=None,
+                engine="python",
+                dtype=str
+            )
+        else:
+            tabela_referencia = pd.read_excel(
+                tabela_ref_file,
+                dtype=str
+            )
 
-    vencimentos = (
-        vencimentos
-        .groupby(["ESTRUTURA ARQUIVO","SECRETARIA","ORGANOGRAMA","FONTE"])["VALOR"]
-        .sum()
-        .reset_index()
-        .rename(columns={"VALOR":"VENCIMENTOS"})
-    )
-
-    # =====================================================
-    # DESCONTOS
-    # =====================================================
-
-    descontos = df[df["Tipo Evento"]=="DESCONTO"]
-
-    descontos = (
-        descontos
-        .groupby(["ESTRUTURA ARQUIVO","SECRETARIA","ORGANOGRAMA","FONTE"])["VALOR"]
-        .sum()
-        .reset_index()
-        .rename(columns={"VALOR":"DESCONTOS"})
-    )
-
-    # =====================================================
-    # BASE
-    # =====================================================
-
-    base = vencimentos.merge(
-        descontos,
-        on=["ESTRUTURA ARQUIVO","SECRETARIA","ORGANOGRAMA","FONTE"],
-        how="outer"
-    ).fillna(0)
-
-    # =====================================================
-    # IRRF
-    # =====================================================
-
-    irrf = df[
-        (df["Tipo Evento"]=="DESCONTO") &
-        (df["Evento"].str.contains("I.R.R.F",case=False,na=False))
-    ]
-
-    irrf = (
-        irrf.groupby(["ESTRUTURA ARQUIVO","SECRETARIA","ORGANOGRAMA","FONTE"])["VALOR"]
-        .sum()
-        .reset_index()
-        .rename(columns={"VALOR":"IRRF"})
-    )
-
-    base = base.merge(
-        irrf,
-        on=["ESTRUTURA ARQUIVO","SECRETARIA","ORGANOGRAMA","FONTE"],
-        how="left"
-    ).fillna(0)
-
-    # =====================================================
-    # PENSAO
-    # =====================================================
-
-    pensao = df[
-        (df["Tipo Evento"]=="DESCONTO") &
-        (df["Evento"].str.contains("pens",case=False,na=False))
-    ]
-
-    pensao = (
-        pensao.groupby(["ESTRUTURA ARQUIVO","SECRETARIA","ORGANOGRAMA","FONTE"])["VALOR"]
-        .sum()
-        .reset_index()
-        .rename(columns={"VALOR":"PENSAO"})
-    )
-
-    base = base.merge(
-        pensao,
-        on=["ESTRUTURA ARQUIVO","SECRETARIA","ORGANOGRAMA","FONTE"],
-        how="left"
-    ).fillna(0)
-
-    # =====================================================
-    # COLUNAS PATRONAIS (AJUSTAREMOS DEPOIS)
-    # =====================================================
-
-    base["PATRONAL - INSS"] = 0
-    base["PATRONAL - SIMPAS"] = 0
-
-    # =====================================================
-    # LIQUIDO
-    # =====================================================
-
-    base["LIQUIDO"] = base["VENCIMENTOS"] - base["DESCONTOS"]
-
-    # =====================================================
-    # TOTAL
-    # =====================================================
-
-    base["TOTAL"] = (
-        base["VENCIMENTOS"]
-        + base["PATRONAL - INSS"]
-        + base["PATRONAL - SIMPAS"]
-    )
-
-    resultado = base.copy()
-
-    # =====================================================
-    # TABELA REFERÊNCIA
-    # =====================================================
-
-    if arquivo_referencia:
-
-        tabela_referencia = ler_arquivo(arquivo_referencia)
+        tabela_referencia.columns = tabela_referencia.columns.str.strip().str.upper()
 
         tabela_referencia["ORGANOGRAMA"] = tabela_referencia["ORGANOGRAMA"].astype(str)
-        resultado["ORGANOGRAMA"] = resultado["ORGANOGRAMA"].astype(str)
+        tabela_referencia["ESTRUTURA ARQUIVO"] = tabela_referencia["ESTRUTURA ARQUIVO"].astype(str)
 
-        resultado = resultado.merge(
-            tabela_referencia,
-            on=["ESTRUTURA ARQUIVO","ORGANOGRAMA"],
-            how="left"
-        )
+        st.success("Tabela referência carregada")
 
-    # =====================================================
-    # FORMATAÇÃO
-    # =====================================================
+    # ============================================
+    # UPLOAD ARQUIVOS DA FOLHA
+    # ============================================
 
-    colunas_moeda = [
-        "VENCIMENTOS",
-        "DESCONTOS",
-        "LIQUIDO",
-        "PATRONAL - INSS",
-        "PATRONAL - SIMPAS",
-        "PENSAO",
-        "IRRF",
-        "TOTAL"
-    ]
-
-    for col in colunas_moeda:
-        resultado[col] = resultado[col].astype(float)
-
-    # =====================================================
-    # EXIBIR
-    # =====================================================
-
-    st.subheader("Resultado da Análise")
-
-    st.dataframe(resultado, use_container_width=True)
-
-    # =====================================================
-    # DOWNLOAD EXCEL
-    # =====================================================
-
-    buffer = io.BytesIO()
-
-    with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
-
-        resultado.to_excel(
-            writer,
-            index=False,
-            sheet_name="Analise"
-        )
-
-    st.download_button(
-        "📥 Baixar Excel",
-        buffer.getvalue(),
-        file_name="analise_folha.xlsx"
+    arquivos = st.file_uploader(
+        "Envie os arquivos da folha",
+        type=["csv", "xlsx"],
+        accept_multiple_files=True,
+        key=f"arquivos_{st.session_state.reset}"
     )
+
+    if not arquivos:
+        return
+
+    if st.button("Executar análise"):
+
+        base_final = []
+
+        for arquivo in arquivos:
+
+            nome_servidor = arquivo.name.split(".")[0].upper()
+
+            # =============================
+            # LEITURA
+            # =============================
+
+            if arquivo.name.endswith(".csv"):
+                df = pd.read_csv(
+                    arquivo,
+                    sep=";",
+                    encoding="utf-8",
+                    dtype=str
+                )
+            else:
+                df = pd.read_excel(arquivo, dtype=str)
+
+            df.columns = df.columns.str.strip()
+
+            # =============================
+            # FILTRAR EVENTOS
+            # =============================
+
+            df = df[df["Tipo Evento"].isin(["VENCIMENTO", "DESCONTO"])]
+
+            # =============================
+            # ESTRUTURA
+            # =============================
+
+            df["codigo"] = df["Estrutura organizacional"].str.split(" - ").str[0]
+
+            df["SECRETARIA"] = df["codigo"].str[:2]
+            df["ORGANOGRAMA"] = df["codigo"].str[4:8]
+            df["FONTE"] = df["codigo"].str[-8:]
+
+            df["ESTRUTURA ARQUIVO"] = df["Estrutura organizacional"].str.split(" - ").str[1]
+
+            df["ORGANOGRAMA"] = df["ORGANOGRAMA"].astype(str)
+            df["ESTRUTURA ARQUIVO"] = df["ESTRUTURA ARQUIVO"].astype(str)
+
+            # =============================
+            # VALORES
+            # =============================
+
+            df["Valor calculado"] = (
+                df["Valor calculado"]
+                .str.replace(" P", "")
+                .str.replace(" D", "")
+            )
+
+            df["VALOR"] = (
+                df["Valor calculado"]
+                .str.replace(".", "", regex=False)
+                .str.replace(",", ".", regex=False)
+                .astype(float)
+            )
+
+            # =============================
+            # VENCIMENTOS
+            # =============================
+
+            vencimentos = (
+                df[df["Tipo Evento"] == "VENCIMENTO"]
+                .groupby(["ESTRUTURA ARQUIVO","SECRETARIA","ORGANOGRAMA","FONTE"])["VALOR"]
+                .sum()
+                .reset_index()
+                .rename(columns={"VALOR":"VENCIMENTOS"})
+            )
+
+            # =============================
+            # DESCONTOS
+            # =============================
+
+            descontos = (
+                df[df["Tipo Evento"] == "DESCONTO"]
+                .groupby(["ESTRUTURA ARQUIVO","SECRETARIA","ORGANOGRAMA","FONTE"])["VALOR"]
+                .sum()
+                .reset_index()
+                .rename(columns={"VALOR":"DESCONTOS"})
+            )
+
+            base = vencimentos.merge(
+                descontos,
+                on=["ESTRUTURA ARQUIVO","SECRETARIA","ORGANOGRAMA","FONTE"],
+                how="outer"
+            ).fillna(0)
+
+            # =============================
+            # IRRF
+            # =============================
+
+            irrf = df[
+                (df["Tipo Evento"]=="DESCONTO") &
+                (df["Evento"].str.contains("I.R.R.F",case=False,na=False))
+            ]
+
+            irrf = (
+                irrf.groupby(["ESTRUTURA ARQUIVO","SECRETARIA","ORGANOGRAMA","FONTE"])["VALOR"]
+                .sum()
+                .reset_index()
+                .rename(columns={"VALOR":"IRRF"})
+            )
+
+            base = base.merge(
+                irrf,
+                on=["ESTRUTURA ARQUIVO","SECRETARIA","ORGANOGRAMA","FONTE"],
+                how="left"
+            ).fillna(0)
+
+            # =============================
+            # PENSAO
+            # =============================
+
+            pensao = df[
+                (df["Tipo Evento"]=="DESCONTO") &
+                (df["Evento"].str.contains("pens",case=False,na=False))
+            ]
+
+            pensao = (
+                pensao.groupby(["ESTRUTURA ARQUIVO","SECRETARIA","ORGANOGRAMA","FONTE"])["VALOR"]
+                .sum()
+                .reset_index()
+                .rename(columns={"VALOR":"PENSAO"})
+            )
+
+            base = base.merge(
+                pensao,
+                on=["ESTRUTURA ARQUIVO","SECRETARIA","ORGANOGRAMA","FONTE"],
+                how="left"
+            ).fillna(0)
+
+            # =============================
+            # CALCULOS
+            # =============================
+
+            base["LIQUIDO"] = base["VENCIMENTOS"] - base["DESCONTOS"]
+
+            base["PATRONAL - INSS"] = 0
+            base["PATRONAL - SIMPAS"] = 0
+            base["TOTAL"] = 0
+
+            base["SERVIDOR"] = nome_servidor
+
+            # =============================
+            # ESTRUTURA ATUALIZADA
+            # =============================
+
+            if tabela_referencia is not None:
+
+                base = base.merge(
+                    tabela_referencia,
+                    on=["ESTRUTURA ARQUIVO","ORGANOGRAMA"],
+                    how="left"
+                )
+
+                if "ESTRUTURA ATUALIZADA" in base.columns:
+                    base["ESTRUTURA ATUALIZADA"] = base["ESTRUTURA ATUALIZADA"].fillna(base["ESTRUTURA ARQUIVO"])
+                else:
+                    base["ESTRUTURA ATUALIZADA"] = base["ESTRUTURA ARQUIVO"]
+
+            else:
+                base["ESTRUTURA ATUALIZADA"] = base["ESTRUTURA ARQUIVO"]
+
+            base_final.append(base)
+
+        # ============================================
+        # CONSOLIDAR
+        # ============================================
+
+        resultado = pd.concat(base_final)
+
+        resultado = resultado[
+            [
+                "SERVIDOR",
+                "ESTRUTURA ARQUIVO",
+                "ESTRUTURA ATUALIZADA",
+                "SECRETARIA",
+                "ORGANOGRAMA",
+                "FONTE",
+                "VENCIMENTOS",
+                "DESCONTOS",
+                "LIQUIDO",
+                "PATRONAL - INSS",
+                "PATRONAL - SIMPAS",
+                "PENSAO",
+                "IRRF",
+                "TOTAL"
+            ]
+        ]
+
+        # ============================================
+        # FORMATAÇÃO PARA TELA
+        # ============================================
+
+        def moeda(v):
+            return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X",".")
+
+        view = resultado.copy()
+
+        for col in [
+            "VENCIMENTOS","DESCONTOS","LIQUIDO",
+            "PATRONAL - INSS","PATRONAL - SIMPAS",
+            "PENSAO","IRRF","TOTAL"
+        ]:
+            view[col] = view[col].apply(moeda)
+
+        st.subheader("Resultado")
+        st.dataframe(view, use_container_width=True)
+
+        # ============================================
+        # EXPORTAR EXCEL
+        # ============================================
+
+        output = io.BytesIO()
+
+        with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+
+            resultado.to_excel(writer, index=False, sheet_name="RH")
+
+            workbook = writer.book
+            formato = workbook.add_format({"num_format":"R$ #,##0.00"})
+
+            worksheet = writer.sheets["RH"]
+
+            for i in range(6,14):
+                worksheet.set_column(i,i,18,formato)
+
+        st.download_button(
+            "Baixar planilha",
+            data=output.getvalue(),
+            file_name="analise_rh.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+
+
+render()
