@@ -94,6 +94,15 @@ def render():
             elif "CONTRATADO" in nome:
                 previdencias["CONTRATADO"] = prev
 
+            elif "COMISSIONADO" in nome:
+                previdencias["COMISSIONADO"] = prev
+
+            elif "AGENTE POLITICO" in nome:
+                previdencias["AGENTE POLITICO"] = prev
+                
+            elif "EDUCAÇÃO" in nome:
+                previdencias["EDUCAÇÃO"] = prev
+
     # ============================================
     # ARQUIVOS FOLHA
     # ============================================
@@ -204,6 +213,9 @@ def render():
             elif "CONTRATADO" in nome_servidor:
                 tipo_folha = "CONTRATADO"
 
+            elif "EDUCAÇÃO" in nome_servidor:
+                tipo_folha = "EDUCAÇÃO"
+
             if tipo_folha and tipo_folha in previdencias:
 
                 prev = previdencias[tipo_folha]
@@ -311,3 +323,4 @@ def render():
 
 
 render()
+
