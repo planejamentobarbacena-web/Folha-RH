@@ -9,45 +9,33 @@ if "reset" not in st.session_state:
 
 def render():
 
-    # ============================================
-    # BOTÃO NOVA CONSULTA (TOPO)
-    # ============================================
-
     if st.button("🔄 Nova Consulta"):
         st.session_state.reset += 1
         st.rerun()
 
     st.title("Análise de Folha - RH")
-    st.write("Envie um ou mais arquivos da folha para análise.")
+    st.write("Envie os arquivos da folha para análise.")
 
     # ============================================
-    # UPLOAD TABELA REFERENCIA (OPCIONAL)
+    # TABELA REFERÊNCIA
     # ============================================
 
     st.subheader("Tabela Referência (Opcional)")
 
     tabela_ref_file = st.file_uploader(
         "Envie a TABELA REFERENCIA",
-        type=["csv", "xlsx"],
-        key=f"tabela_ref_{st.session_state.reset}"
+        type=["csv","xlsx"],
+        key=f"tabela_{st.session_state.reset}"
     )
 
     tabela_referencia = None
 
-    if tabela_ref_file is not None:
+    if tabela_ref_file:
 
         if tabela_ref_file.name.endswith(".csv"):
-            tabela_referencia = pd.read_csv(
-                tabela_ref_file,
-                sep=None,
-                engine="python",
-                dtype=str
-            )
+            tabela_referencia = pd.read_csv(tabela_ref_file, sep=None, engine="python", dtype=str)
         else:
-            tabela_referencia = pd.read_excel(
-                tabela_ref_file,
-                dtype=str
-            )
+            tabela_referencia = pd.read_excel(tabela_ref_file, dtype=str)
 
         tabela_referencia.columns = tabela_referencia.columns.str.strip().str.upper()
 
@@ -57,14 +45,71 @@ def render():
         st.success("Tabela referência carregada")
 
     # ============================================
-    # UPLOAD ARQUIVOS DA FOLHA
+    # PREVIDENCIA
+    # ============================================
+
+    st.subheader("Arquivos de Previdência")
+
+    arquivos_prev = st.file_uploader(
+        "Envie os arquivos PREVIDENCIA",
+        type=["csv","xlsx"],
+        accept_multiple_files=True,
+        key=f"prev_{st.session_state.reset}"
+    )
+
+    previdencia_total = pd.DataFrame()
+
+    if arquivos_prev:
+
+        lista_prev = []
+
+        for arq in arquivos_prev:
+
+            if arq.name.endswith(".csv"):
+                prev = pd.read_csv(arq, sep=";", dtype=str)
+            else:
+                prev = pd.read_excel(arq, dtype=str)
+
+            # coluna A = organograma completo
+            prev["codigo"] = prev.iloc[:,0].astype(str)
+
+            prev["SECRETARIA"] = prev["codigo"].str[:2]
+            prev["ORGANOGRAMA"] = prev["codigo"].str[6:10]
+            prev["FONTE"] = prev["codigo"].str[-8:]
+
+            # coluna E = Fundo (28%)
+            prev["VALOR"] = (
+                prev.iloc[:,4]
+                .astype(str)
+                .str.replace(".","",regex=False)
+                .str.replace(",",".",regex=False)
+                .astype(float)
+            )
+
+            prev = prev.groupby(
+                ["SECRETARIA","ORGANOGRAMA","FONTE"]
+            )["VALOR"].sum().reset_index()
+
+            nome = arq.name.upper()
+
+            if "EFETIVO" in nome:
+                prev["TIPO"] = "INSS"
+            else:
+                prev["TIPO"] = "SIMPAS"
+
+            lista_prev.append(prev)
+
+        previdencia_total = pd.concat(lista_prev)
+
+    # ============================================
+    # ARQUIVOS DA FOLHA
     # ============================================
 
     arquivos = st.file_uploader(
         "Envie os arquivos da folha",
-        type=["csv", "xlsx"],
+        type=["csv","xlsx"],
         accept_multiple_files=True,
-        key=f"arquivos_{st.session_state.reset}"
+        key=f"folha_{st.session_state.reset}"
     )
 
     if not arquivos:
@@ -78,31 +123,14 @@ def render():
 
             nome_servidor = arquivo.name.split(".")[0].upper()
 
-            # =============================
-            # LEITURA
-            # =============================
-
             if arquivo.name.endswith(".csv"):
-                df = pd.read_csv(
-                    arquivo,
-                    sep=";",
-                    encoding="utf-8",
-                    dtype=str
-                )
+                df = pd.read_csv(arquivo, sep=";", encoding="utf-8", dtype=str)
             else:
                 df = pd.read_excel(arquivo, dtype=str)
 
             df.columns = df.columns.str.strip()
 
-            # =============================
-            # FILTRAR EVENTOS
-            # =============================
-
-            df = df[df["Tipo Evento"].isin(["VENCIMENTO", "DESCONTO"])]
-
-            # =============================
-            # ESTRUTURA
-            # =============================
+            df = df[df["Tipo Evento"].isin(["VENCIMENTO","DESCONTO"])]
 
             df["codigo"] = df["Estrutura organizacional"].str.split(" - ").str[0]
 
@@ -112,47 +140,26 @@ def render():
 
             df["ESTRUTURA ARQUIVO"] = df["Estrutura organizacional"].str.split(" - ").str[1]
 
-            df["ORGANOGRAMA"] = df["ORGANOGRAMA"].astype(str)
-            df["ESTRUTURA ARQUIVO"] = df["ESTRUTURA ARQUIVO"].astype(str)
-
-            # =============================
-            # VALORES
-            # =============================
-
-            df["Valor calculado"] = (
-                df["Valor calculado"]
-                .str.replace(" P", "")
-                .str.replace(" D", "")
-            )
+            df["Valor calculado"] = df["Valor calculado"].str.replace(" P","").str.replace(" D","")
 
             df["VALOR"] = (
                 df["Valor calculado"]
-                .str.replace(".", "", regex=False)
-                .str.replace(",", ".", regex=False)
+                .str.replace(".","",regex=False)
+                .str.replace(",",".",regex=False)
                 .astype(float)
             )
 
-            # =============================
-            # VENCIMENTOS
-            # =============================
-
             vencimentos = (
-                df[df["Tipo Evento"] == "VENCIMENTO"]
+                df[df["Tipo Evento"]=="VENCIMENTO"]
                 .groupby(["ESTRUTURA ARQUIVO","SECRETARIA","ORGANOGRAMA","FONTE"])["VALOR"]
-                .sum()
-                .reset_index()
+                .sum().reset_index()
                 .rename(columns={"VALOR":"VENCIMENTOS"})
             )
 
-            # =============================
-            # DESCONTOS
-            # =============================
-
             descontos = (
-                df[df["Tipo Evento"] == "DESCONTO"]
+                df[df["Tipo Evento"]=="DESCONTO"]
                 .groupby(["ESTRUTURA ARQUIVO","SECRETARIA","ORGANOGRAMA","FONTE"])["VALOR"]
-                .sum()
-                .reset_index()
+                .sum().reset_index()
                 .rename(columns={"VALOR":"DESCONTOS"})
             )
 
@@ -162,9 +169,9 @@ def render():
                 how="outer"
             ).fillna(0)
 
-            # =============================
+            # =================================
             # IRRF
-            # =============================
+            # =================================
 
             irrf = df[
                 (df["Tipo Evento"]=="DESCONTO") &
@@ -173,20 +180,15 @@ def render():
 
             irrf = (
                 irrf.groupby(["ESTRUTURA ARQUIVO","SECRETARIA","ORGANOGRAMA","FONTE"])["VALOR"]
-                .sum()
-                .reset_index()
+                .sum().reset_index()
                 .rename(columns={"VALOR":"IRRF"})
             )
 
-            base = base.merge(
-                irrf,
-                on=["ESTRUTURA ARQUIVO","SECRETARIA","ORGANOGRAMA","FONTE"],
-                how="left"
-            ).fillna(0)
+            base = base.merge(irrf, how="left").fillna(0)
 
-            # =============================
+            # =================================
             # PENSAO
-            # =============================
+            # =================================
 
             pensao = df[
                 (df["Tipo Evento"]=="DESCONTO") &
@@ -195,32 +197,50 @@ def render():
 
             pensao = (
                 pensao.groupby(["ESTRUTURA ARQUIVO","SECRETARIA","ORGANOGRAMA","FONTE"])["VALOR"]
-                .sum()
-                .reset_index()
+                .sum().reset_index()
                 .rename(columns={"VALOR":"PENSAO"})
             )
 
-            base = base.merge(
-                pensao,
-                on=["ESTRUTURA ARQUIVO","SECRETARIA","ORGANOGRAMA","FONTE"],
-                how="left"
-            ).fillna(0)
+            base = base.merge(pensao, how="left").fillna(0)
 
-            # =============================
-            # CALCULOS
-            # =============================
+            # =================================
+            # PREVIDENCIA
+            # =================================
+
+            if not previdencia_total.empty:
+
+                prev = previdencia_total.copy()
+
+                base = base.merge(
+                    prev,
+                    on=["SECRETARIA","ORGANOGRAMA","FONTE"],
+                    how="left"
+                )
+
+                base["PATRONAL - INSS"] = base.apply(
+                    lambda x: x["VALOR"] if x.get("TIPO")=="INSS" else 0,
+                    axis=1
+                )
+
+                base["PATRONAL - SIMPAS"] = base.apply(
+                    lambda x: x["VALOR"] if x.get("TIPO")=="SIMPAS" else 0,
+                    axis=1
+                )
+
+            else:
+
+                base["PATRONAL - INSS"] = 0
+                base["PATRONAL - SIMPAS"] = 0
 
             base["LIQUIDO"] = base["VENCIMENTOS"] - base["DESCONTOS"]
 
-            base["PATRONAL - INSS"] = 0
-            base["PATRONAL - SIMPAS"] = 0
-            base["TOTAL"] = 0
+            base["TOTAL"] = (
+                base["LIQUIDO"]
+                + base["PATRONAL - INSS"]
+                + base["PATRONAL - SIMPAS"]
+            )
 
             base["SERVIDOR"] = nome_servidor
-
-            # =============================
-            # ESTRUTURA ATUALIZADA
-            # =============================
 
             if tabela_referencia is not None:
 
@@ -230,19 +250,13 @@ def render():
                     how="left"
                 )
 
-                if "ESTRUTURA ATUALIZADA" in base.columns:
-                    base["ESTRUTURA ATUALIZADA"] = base["ESTRUTURA ATUALIZADA"].fillna(base["ESTRUTURA ARQUIVO"])
-                else:
-                    base["ESTRUTURA ATUALIZADA"] = base["ESTRUTURA ARQUIVO"]
+                base["ESTRUTURA ATUALIZADA"] = base["ESTRUTURA ATUALIZADA"].fillna(base["ESTRUTURA ARQUIVO"])
 
             else:
+
                 base["ESTRUTURA ATUALIZADA"] = base["ESTRUTURA ARQUIVO"]
 
             base_final.append(base)
-
-        # ============================================
-        # CONSOLIDAR
-        # ============================================
 
         resultado = pd.concat(base_final)
 
@@ -265,10 +279,6 @@ def render():
             ]
         ]
 
-        # ============================================
-        # FORMATAÇÃO PARA TELA
-        # ============================================
-
         def moeda(v):
             return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X",".")
 
@@ -283,10 +293,6 @@ def render():
 
         st.subheader("Resultado")
         st.dataframe(view, use_container_width=True)
-
-        # ============================================
-        # EXPORTAR EXCEL
-        # ============================================
 
         output = io.BytesIO()
 
