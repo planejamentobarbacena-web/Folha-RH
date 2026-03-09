@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import io
 
-# controle reset uploads
+# reset uploads
 if "reset" not in st.session_state:
     st.session_state.reset = 0
 
@@ -25,7 +25,7 @@ def render():
     tabela_ref_file = st.file_uploader(
         "Envie a TABELA REFERENCIA",
         type=["csv","xlsx"],
-        key=f"tabela_{st.session_state.reset}"
+        key=f"ref_{st.session_state.reset}"
     )
 
     tabela_referencia = None
@@ -57,27 +57,25 @@ def render():
         key=f"prev_{st.session_state.reset}"
     )
 
-    previdencia_total = pd.DataFrame()
+    previdencias = {}
 
     if arquivos_prev:
 
-        lista_prev = []
-
         for arq in arquivos_prev:
+
+            nome = arq.name.upper()
 
             if arq.name.endswith(".csv"):
                 prev = pd.read_csv(arq, sep=";", dtype=str)
             else:
                 prev = pd.read_excel(arq, dtype=str)
 
-            # coluna A = organograma completo
             prev["codigo"] = prev.iloc[:,0].astype(str)
 
             prev["SECRETARIA"] = prev["codigo"].str[:2]
             prev["ORGANOGRAMA"] = prev["codigo"].str[6:10]
             prev["FONTE"] = prev["codigo"].str[-8:]
 
-            # coluna E = Fundo (28%)
             prev["VALOR"] = (
                 prev.iloc[:,4]
                 .astype(str)
@@ -90,19 +88,14 @@ def render():
                 ["SECRETARIA","ORGANOGRAMA","FONTE"]
             )["VALOR"].sum().reset_index()
 
-            nome = arq.name.upper()
-
             if "EFETIVO" in nome:
-                prev["TIPO"] = "INSS"
-            else:
-                prev["TIPO"] = "SIMPAS"
+                previdencias["EFETIVO"] = prev
 
-            lista_prev.append(prev)
-
-        previdencia_total = pd.concat(lista_prev)
+            elif "CONTRATADO" in nome:
+                previdencias["CONTRATADO"] = prev
 
     # ============================================
-    # ARQUIVOS DA FOLHA
+    # ARQUIVOS FOLHA
     # ============================================
 
     arquivos = st.file_uploader(
@@ -169,9 +162,7 @@ def render():
                 how="outer"
             ).fillna(0)
 
-            # =================================
             # IRRF
-            # =================================
 
             irrf = df[
                 (df["Tipo Evento"]=="DESCONTO") &
@@ -186,9 +177,7 @@ def render():
 
             base = base.merge(irrf, how="left").fillna(0)
 
-            # =================================
             # PENSAO
-            # =================================
 
             pensao = df[
                 (df["Tipo Evento"]=="DESCONTO") &
@@ -203,13 +192,21 @@ def render():
 
             base = base.merge(pensao, how="left").fillna(0)
 
-            # =================================
+            # ============================================
             # PREVIDENCIA
-            # =================================
+            # ============================================
 
-            if not previdencia_total.empty:
+            tipo_folha = None
 
-                prev = previdencia_total.copy()
+            if "EFETIVO" in nome_servidor:
+                tipo_folha = "EFETIVO"
+
+            elif "CONTRATADO" in nome_servidor:
+                tipo_folha = "CONTRATADO"
+
+            if tipo_folha and tipo_folha in previdencias:
+
+                prev = previdencias[tipo_folha]
 
                 base = base.merge(
                     prev,
@@ -217,15 +214,12 @@ def render():
                     how="left"
                 )
 
-                base["PATRONAL - INSS"] = base.apply(
-                    lambda x: x["VALOR"] if x.get("TIPO")=="INSS" else 0,
-                    axis=1
-                )
-
-                base["PATRONAL - SIMPAS"] = base.apply(
-                    lambda x: x["VALOR"] if x.get("TIPO")=="SIMPAS" else 0,
-                    axis=1
-                )
+                if tipo_folha == "EFETIVO":
+                    base["PATRONAL - INSS"] = base["VALOR"].fillna(0)
+                    base["PATRONAL - SIMPAS"] = 0
+                else:
+                    base["PATRONAL - SIMPAS"] = base["VALOR"].fillna(0)
+                    base["PATRONAL - INSS"] = 0
 
             else:
 
