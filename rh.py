@@ -271,9 +271,28 @@ def render():
 
         output = io.BytesIO()
 
-        with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
 
-            resultado.to_excel(writer, index=False, sheet_name="RH")
+    resultado.to_excel(writer, index=False, sheet_name="RH")
+
+    workbook = writer.book
+    worksheet = writer.sheets["RH"]
+
+    formato_moeda = workbook.add_format({"num_format": "R$ #,##0.00"})
+
+    colunas_moeda = [
+        "VENCIMENTOS",
+        "DESCONTOS",
+        "LIQUIDO",
+        "PATRONAL",
+        "PENSAO",
+        "IRRF",
+        "TOTAL"
+    ]
+
+    for i, col in enumerate(resultado.columns):
+        if col in colunas_moeda:
+            worksheet.set_column(i, i, 18, formato_moeda)
 
         st.download_button(
             "Baixar planilha",
@@ -284,3 +303,4 @@ def render():
 
 
 render()
+
