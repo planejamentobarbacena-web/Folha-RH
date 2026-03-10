@@ -45,68 +45,9 @@ def render():
         st.success("Tabela referência carregada")
 
     # ============================================
-    # PREVIDENCIA
-    # ============================================
-
-    st.subheader("Arquivos de Previdência")
-
-    arquivos_prev = st.file_uploader(
-        "Envie os arquivos PREVIDENCIA",
-        type=["csv","xlsx"],
-        accept_multiple_files=True,
-        key=f"prev_{st.session_state.reset}"
-    )
-
-    previdencias = {}
-
-    if arquivos_prev:
-
-        for arq in arquivos_prev:
-
-            nome = arq.name.upper()
-
-            if arq.name.endswith(".csv"):
-                prev = pd.read_csv(arq, sep=";", dtype=str)
-            else:
-                prev = pd.read_excel(arq, dtype=str)
-
-            prev["codigo"] = prev.iloc[:,0].astype(str)
-
-            prev["SECRETARIA"] = prev["codigo"].str[:2]
-            prev["ORGANOGRAMA"] = prev["codigo"].str[6:10]
-            prev["FONTE"] = prev["codigo"].str[-8:]
-
-            prev["VALOR"] = (
-                prev.iloc[:,4]
-                .astype(str)
-                .str.replace(".","",regex=False)
-                .str.replace(",",".",regex=False)
-                .astype(float)
-            )
-
-            prev = prev.groupby(
-                ["SECRETARIA","ORGANOGRAMA","FONTE"]
-            )["VALOR"].sum().reset_index()
-
-            if "EFETIVO" in nome:
-                previdencias["EFETIVO"] = prev
-
-            elif "CONTRATADO" in nome:
-                previdencias["CONTRATADO"] = prev
-
-            elif "COMISSIONADO" in nome:
-                previdencias["COMISSIONADO"] = prev
-
-            elif "AGENTE POLITICO" in nome:
-                previdencias["AGENTE POLITICO"] = prev
-                
-            elif "EDUCAÇÃO" in nome:
-                previdencias["EDUCAÇÃO"] = prev
-
-    # ============================================
     # ARQUIVOS FOLHA
     # ============================================
-
+    st.subheader("Arquivos de Folha")
     arquivos = st.file_uploader(
         "Envie os arquivos da folha",
         type=["csv","xlsx"],
@@ -200,7 +141,64 @@ def render():
             )
 
             base = base.merge(pensao, how="left").fillna(0)
+    # ============================================
+    # PREVIDENCIA
+    # ============================================
 
+    st.subheader("Arquivos de Previdência")
+
+    arquivos_prev = st.file_uploader(
+        "Envie os arquivos PREVIDENCIA",
+        type=["csv","xlsx"],
+        accept_multiple_files=True,
+        key=f"prev_{st.session_state.reset}"
+    )
+
+    previdencias = {}
+
+    if arquivos_prev:
+
+        for arq in arquivos_prev:
+
+            nome = arq.name.upper()
+
+            if arq.name.endswith(".csv"):
+                prev = pd.read_csv(arq, sep=";", dtype=str)
+            else:
+                prev = pd.read_excel(arq, dtype=str)
+
+            prev["codigo"] = prev.iloc[:,0].astype(str)
+
+            prev["SECRETARIA"] = prev["codigo"].str[:2]
+            prev["ORGANOGRAMA"] = prev["codigo"].str[6:10]
+            prev["FONTE"] = prev["codigo"].str[-8:]
+
+            prev["VALOR"] = (
+                prev.iloc[:,4]
+                .astype(str)
+                .str.replace(".","",regex=False)
+                .str.replace(",",".",regex=False)
+                .astype(float)
+            )
+
+            prev = prev.groupby(
+                ["SECRETARIA","ORGANOGRAMA","FONTE"]
+            )["VALOR"].sum().reset_index()
+
+            if "EFETIVO" in nome:
+                previdencias["EFETIVO"] = prev
+
+            elif "CONTRATADO" in nome:
+                previdencias["CONTRATADO"] = prev
+
+            elif "COMISSIONADO" in nome:
+                previdencias["COMISSIONADO"] = prev
+
+            elif "AGENTE POLITICO" in nome:
+                previdencias["AGENTE POLITICO"] = prev
+                
+            elif "EDUCAÇÃO" in nome:
+                previdencias["EDUCAÇÃO"] = prev
             # ============================================
             # PREVIDENCIA
             # ============================================
@@ -323,4 +321,5 @@ def render():
 
 
 render()
+
 
