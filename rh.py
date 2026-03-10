@@ -269,7 +269,7 @@ def render():
         st.subheader("Resultado")
         st.dataframe(resultado, use_container_width=True)
 
-            output = io.BytesIO()
+        output = io.BytesIO()
 
         with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
 
@@ -301,5 +301,6 @@ def render():
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 render()
+
 
 
